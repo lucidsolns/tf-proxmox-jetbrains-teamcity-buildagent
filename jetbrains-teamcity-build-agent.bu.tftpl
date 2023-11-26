@@ -1,0 +1,244 @@
+# Configuration for the Flatcar VM, with support for terraform template substitution.
+#
+# see
+#   - https://coreos.github.io/butane/config-flatcar-v1_1/
+#   - https://coreos.github.io/butane/config-flatcar-v1_0/
+#   - https://coreos.github.io/butane/
+#
+version: 1.0.0
+variant: flatcar
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkyaM9D4TtCOSdIR8JvH5DCt0UHbfPGx7VlSJrP593N greg-ed25519
+
+    # The build agent runs as uid/gid 1000:1000, so create a user make that readable
+    # for file ownerships. The build agent must have access to the docker socket.
+    - name: tcuser
+      uid: 1000
+      primary_group: tcuser
+      groups:
+        - docker
+      no_create_home: true
+  groups:
+    - name: tcuser
+      gid: 1000
+
+storage:
+  disks:
+    # Partition the ZFS sparse zvol with a GPT, with a single swap partition
+    #
+    # see:
+    #   - https://docs.docker.com/config/containers/resource_constraints/
+    - device: /dev/vda
+      wipe_table: false
+      partitions:
+        - label: swap
+          wipe_partition_entry: false
+          type_guid: 0657FD6D-A4AB-43C4-84E5-0933C84B4F4F # see https://en.wikipedia.org/wiki/GUID_Partition_Table
+
+    # Partition the sparse ZFS zvol with a GPT, with a single partition
+    - device: /dev/vdb
+      wipe_table: false
+      partitions:
+        - label: buildagent
+          number: 1
+          wipe_partition_entry: false
+
+  filesystems:
+    - device: /dev/disk/by-partlabel/swap
+      format: swap
+      wipe_filesystem: true
+      label: swap
+      with_mount_unit: true
+
+    - device: /dev/disk/by-partlabel/buildagent
+      path: /opt/buildagent
+      format: ext4
+      wipe_filesystem: true
+      label: buildagent
+      with_mount_unit: true
+
+  directories:
+    - path: /opt/buildagent
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+    - path: /opt/buildagent/system
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+    - path: /opt/buildagent/work
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+    - path: /opt/buildagent/temp
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+    - path: /opt/buildagent/tools
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+    - path: /opt/buildagent/plugins
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
+
+  files:
+    - path: /etc/hostname
+      mode: 0644
+      contents:
+        inline: ${vm_name}
+
+    # Docker compose for Jetbrains Teamcity Build Agent
+    #
+    # see:
+    #  - https://github.com/JetBrains/teamcity-docker-samples
+    #  - https://hub.docker.com/r/jetbrains/teamcity-agent
+    #  - https://hub.docker.com/r/jetbrains/teamcity-minimal-agent/
+    #  - https://github.com/JetBrains/teamcity-docker-images
+    #  - https://www.jetbrains.com/help/teamcity/configure-agent-installation.html#General+Agent+Configuration
+    - path: /etc/docker-compose.yaml
+      mode: 0444
+      contents:
+        inline: |
+          ---
+          version: "2.1"
+          services:
+            teamcity:
+              image: jetbrains/teamcity-agent:2023.05.4
+              network_mode: host
+              group_add:
+                # The Flatcar VM uses GID=233 for docker, whereas the Agent container uses GID=999
+                # for the docker group. Add the Flatcar VM group id to the agent user (UID=1000) 
+                #
+                # see:
+                #  - https://docs.docker.com/compose/compose-file/compose-file-v2/#group_add 
+                - "233"
+              environment:
+                - SERVER_URL=https://teamcity.lucidsolutions.co.nz
+                - xAGENT_NAME=${vm_name}
+                - xAGENT_TOKEN=TODO
+                - TZ=Pacific/Auckland
+              ports:
+                - "8111:8111"
+              volumes:
+                # Use 'docker-out-of-docker' - i.e. use the host Flatcar docker
+                - "/var/run/docker.sock:/var/run/docker.sock"
+                - "/opt/buildagent/work:/opt/buildagent/work"
+                - "/opt/buildagent/temp:/opt/buildagent/temp"
+                - "/opt/buildagent/tools:/opt/buildagent/tools"
+                - "/opt/buildagent/plugins:/opt/buildagent/plugins"
+                - "/opt/buildagent/system:/opt/buildagent/system"
+              restart: unless-stopped
+
+
+    - path: /etc/systemd/network/10-eth0.network
+      contents:
+        inline: |
+          [Match]
+          Name=eth0
+          
+          [Link]
+          MTUBytes=9000
+
+          [Network]
+          Address=10.20.20.${4 + vm_count_index}/24
+          Gateway=10.20.20.1
+          IPv6AcceptRA=yes
+          
+          [IPv6AcceptRA]
+          Token=static:::${4 + vm_count_index}
+
+    # Locks down the ssh daemon.
+    #
+    # see:
+    #  - https://www.flatcar.org/docs/latest/setup/security/customizing-sshd/
+    - path: /etc/ssh/sshd_config
+      overwrite: true
+      mode: 0600
+      contents:
+        inline: |
+          # Use most defaults for sshd configuration.
+          Subsystem sftp internal-sftp
+          UseDNS no
+
+          PermitRootLogin no
+          AllowUsers core pages
+          AuthenticationMethods publickey        
+
+systemd:
+  units:
+
+    # Use host networking, so disable the bridge and iptables/NAT
+    - name: docker.service
+      enabled: true
+      dropins:
+        - name: 10-ipv6.conf
+          contents: |
+            [Service]
+            Environment="DOCKER_OPTS=--bridge=none --iptables=false --ip-masq=false"
+    
+
+    # 'docker compose' (v2) is not part of flatcar, so add it. This needs to be done
+    # after the network comes up, so do it via a systemd unit rather than a 'file' entry.
+    #
+    # WARNING: this doesn't install the cli plugin correctly, as it would need to be
+    # installed on '/usr' which is read-only. So docker compose must be used via
+    # `docker-compose` (i.e. with the hyphen).
+    #
+    # TODO: put this into a `.service` file when v1.1.0 ignition files are supported
+    # TODO: consider using a sysext
+    #
+    # see
+    #  - https://github.com/flatcar/Flatcar/issues/894#issuecomment-1318414513
+    #  - https://github.com/docker/compose
+    - name: docker-compose-install.service
+      enabled: true
+      contents: |
+        [Unit]
+        Wants=network-online.target
+        After=network.target network-online.target
+        ConditionFileIsExecutable=!/opt/bin/docker-compose
+        
+        [Service]
+        Environment=SOURCE_URL=https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-linux-x86_64
+        Environment=VERIFICATION=08e549924823e97a3ea303c2309b812dfd5223b8be5ff96fe41bf75181ce0977
+        Type=oneshot
+        RemainAfterExit=True
+        ExecStart=/usr/bin/curl --location --no-progress-meter --output /opt/bin/docker-compose~ "$${SOURCE_URL}"
+        ExecStart=/bin/sh -c "echo \"$${VERIFICATION} /opt/bin/docker-compose~\" | /usr/bin/sha256sum --check --status"
+        ExecStart=/usr/bin/chmod +x /opt/bin/docker-compose~
+        ExecStart=/usr/bin/mv /opt/bin/docker-compose~ /opt/bin/docker-compose
+        
+        [Install]
+        WantedBy=multi-user.target
+
+    # Teamcity Build Agent Service
+    - name: tcagent.service
+      enabled: true
+      contents: |
+        [Unit]
+        After=docker.service docker-compose-install.service
+        Requires=docker.service docker-compose-install.service
+        
+        [Service]
+        ExecStart=/opt/bin/docker-compose -f /etc/docker-compose.yaml up
+        
+        [Install]
+        WantedBy=multi-user.target
