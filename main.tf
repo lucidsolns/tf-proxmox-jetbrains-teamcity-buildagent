@@ -13,10 +13,10 @@ terraform {
       - https://hub.docker.com/r/jetbrains/teamcity-agent/
 */
 module "khaki" {
-    source        = "c:\\dev\\lucid\\terraform-vm-proxmox"
-#  source        = "lucidsolns/proxmox/vm"
-#  version       = ">= 0.0.9"
-  vm_count      = 2
+  # source        = "c:\\dev\\lucid\\terraform-vm-proxmox"
+  source        = "lucidsolns/proxmox/vm"
+  version       = ">= 0.0.9"
+  vm_count      = 3
   vm_id         = 145
   name          = "khaki.lucidsolutions.co.nz"
   description   = <<-EOT
@@ -38,7 +38,7 @@ module "khaki" {
     {
       slot    = 0
       type    = "scsi"
-      size    = "0K" # no size, we don't want the template resized
+      size    = "16G" # resize the template disk
       storage = "local"
       format  = "qcow2"
     },
@@ -53,7 +53,7 @@ module "khaki" {
       discard = "on" # enable 'trim' support, as ZFS supports this
     },
 
-    // A non-persisten data disk to be mounted on /opt/
+    // A non-persistent data disk to be mounted on /opt/
     //
     {
       slot    = 2
