@@ -15,7 +15,7 @@ terraform {
 module "khaki" {
   # source        = "c:\\dev\\lucid\\terraform-vm-proxmox"
   source        = "lucidsolns/proxmox/vm"
-  version       = ">= 0.0.9"
+  version       = ">= 0.0.13"
   vm_count      = 3
   vm_id         = 145
   name          = "khaki.lucidsolutions.co.nz"
