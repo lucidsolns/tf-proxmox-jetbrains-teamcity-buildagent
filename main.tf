@@ -1,5 +1,5 @@
 terraform {
-  required_version = "~> 1.5.0"
+  required_version = "> 1.6.0"
 }
 /*
     Jetbrains Teamcity Build Agent (deployed as a container on Flatcar Linux).
