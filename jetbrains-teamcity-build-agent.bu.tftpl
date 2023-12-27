@@ -172,12 +172,12 @@ storage:
           MTUBytes=9000
 
           [Network]
-          Address=10.20.20.${4 + vm_count_index}/24
+          Address=10.20.20.${4 + vm_index}/24
           Gateway=10.20.20.1
           IPv6AcceptRA=yes
           
           [IPv6AcceptRA]
-          Token=static:::${4 + vm_count_index}
+          Token=static:::${4 + vm_index}
 
     # Locks down the ssh daemon.
     #
