@@ -30,6 +30,7 @@ module "khaki" {
   pm_password   = var.pm_password
   template_name = "flatcar-production-qemu-stable-3602.2.3"
   butane_conf   = "${path.module}/jetbrains-teamcity-build-agent.bu.tftpl"
+  butane_path   = "${path.module}/config"
   memory        = 8192
   networks      = [{ bridge = var.bridge, tag = 120 }]
   disks         = [
