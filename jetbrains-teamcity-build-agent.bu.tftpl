@@ -22,6 +22,7 @@ passwd:
       groups:
         - docker
       no_create_home: true
+
   groups:
     - name: tcuser
       gid: 1000
@@ -32,7 +33,7 @@ storage:
     #
     # see:
     #   - https://docs.docker.com/config/containers/resource_constraints/
-    - device: /dev/vda
+    - device: /dev/vdb
       wipe_table: false
       partitions:
         - label: swap
@@ -40,7 +41,7 @@ storage:
           type_guid: 0657FD6D-A4AB-43C4-84E5-0933C84B4F4F # see https://en.wikipedia.org/wiki/GUID_Partition_Table
 
     # Partition the sparse ZFS zvol with a GPT, with a single partition
-    - device: /dev/vdb
+    - device: /dev/vdc
       wipe_table: false
       partitions:
         - label: buildagent
@@ -105,10 +106,6 @@ storage:
       contents:
         inline: ${vm_name}
 
-    - path: /etc/docker-compose.yaml
-      contents:
-        local: docker-compose.yaml
-
     - path: /etc/systemd/network/10-eth0.network
       contents:
         inline: |
@@ -134,62 +131,99 @@ storage:
       overwrite: true
       mode: 0600
       contents:
-        inline: |
-          # Use most defaults for sshd configuration.
-          Subsystem sftp internal-sftp
-          UseDNS no
+        local: sshd_config
 
-          PermitRootLogin no
-          AllowUsers core pages
-          AuthenticationMethods publickey        
 
 systemd:
+
+  # Systemd service for Jetbrains Teamcity Build Agent.
+  #
+  # This will run the teamcity agent container directly with `docker run` (i.e. this
+  # service doesn't use or require docker compose).
+  #
+  # WARNING: This inline systemd service file has line continuation characters (backslash)
+  # which are not parsed correctly if this is a local content file. So it is expressed here
+  # inline.
+  #
+  # This file will be written as `/etc/systemd/system/teamcity-agent.service`, by the ignition
+  # script which can be read at `/sys/firmware/qemu_fw_cfg/by_name/opt/org.flatcar-linux/config/raw`.
+  #
+  # see:
+  #  - https://github.com/JetBrains/teamcity-docker-samples
+  #  - https://github.com/JetBrains/teamcity-docker-images/blob/master/dockerhub/teamcity-agent/README.md
+  #  - https://hub.docker.com/r/jetbrains/teamcity-agent
+  #  - https://hub.docker.com/r/jetbrains/teamcity-minimal-agent/
+  #  - https://github.com/JetBrains/teamcity-docker-images
+  #  - https://www.jetbrains.com/help/teamcity/configure-agent-installation.html#General+Agent+Configuration
+  #  - https://www.jetbrains.com/help/teamcity/agent-docker-images.html
   units:
-
-    # 'docker compose' (v2) is not part of flatcar, so add it. This needs to be done
-    # after the network comes up, so do it via a systemd unit rather than a 'file' entry.
-    #
-    # WARNING: this doesn't install the cli plugin correctly, as it would need to be
-    # installed on '/usr' which is read-only. So docker compose must be used via
-    # `docker-compose` (i.e. with the hyphen).
-    #
-    # TODO: put this into a `.service` file when v1.1.0 ignition files are supported
-    # TODO: consider using a sysext
-    #
-    # see
-    #  - https://github.com/flatcar/Flatcar/issues/894#issuecomment-1318414513
-    #  - https://github.com/docker/compose
-    - name: docker-compose-install.service
+    - name: teamcity-agent.service
       enabled: true
       contents: |
         [Unit]
-        Wants=network-online.target
-        After=network.target network-online.target
-        ConditionFileIsExecutable=!/opt/bin/docker-compose
+        Description=TeamCity Build Agent
+        After=docker.service
+        Requires=docker.service
         
         [Service]
-        Environment=SOURCE_URL=https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-linux-x86_64
-        Environment=VERIFICATION=08e549924823e97a3ea303c2309b812dfd5223b8be5ff96fe41bf75181ce0977
-        Type=oneshot
-        RemainAfterExit=True
-        ExecStart=/usr/bin/curl --location --no-progress-meter --output /opt/bin/docker-compose~ "$${SOURCE_URL}"
-        ExecStart=/bin/sh -c "echo \"$${VERIFICATION} /opt/bin/docker-compose~\" | /usr/bin/sha256sum --check --status"
-        ExecStart=/usr/bin/chmod +x /opt/bin/docker-compose~
-        ExecStart=/usr/bin/mv /opt/bin/docker-compose~ /opt/bin/docker-compose
+        #
+        # === Pull and clean up ===
+        ExecStartPre=-/usr/bin/docker pull "${TEAMCITY_IMAGE}"
+        ExecStartPre=-/usr/bin/docker stop %p
+        ExecStartPre=-/usr/bin/docker rm -f %p
+        
+        # === Run container ===
+        #
+        # The agent is running with host networking. However build agent workloads
+        # run with docker networking (and NAT). Some build agent workloads run
+        # with the option `--network=host` so they also run on the hosts network.
+        # The teamcity 'docker-compose' build runner always runs on its own network
+        # so they require non-host networking.
+        #
+        # The Flatcar VM uses GID=233 for docker, whereas the Agent container uses GID=999
+        # for the docker group. Add the Flatcar VM group id to the agent user (UID=1000)
+        #
+        # Use 'docker-out-of-docker' to run docker workloads within the Teamcity build
+        # agent - i.e. use the host Flatcar docker
+        #
+        # Generating a token for auto-registration is harder than it should be, but the
+        # terraform has captured doing this with a long lived admin token to issue
+        # a build agent token.
+        #
+        # see:
+        #  - https://github.com/matt-richardson/TeamCityAgentAutoRegisterPlugin
+        #  - https://serverfault.com/questions/690685/automatically-authorize-teamcity-agents
+        #  - https://plugins.jetbrains.com/plugin/8998-agent-token-authorize
+        #  - https://plugins.jetbrains.com/plugin/13105-agent-auto-add-remove
+        #
+        # see:
+        #  - https://docs.docker.com/compose/compose-file/compose-file-v2/#group_add
+        #
+        ExecStart=/usr/bin/docker run --rm \
+          --name=teamcity-agent \
+          --network host \
+          --group-add 233 \
+          -e SERVER_URL="${TEAMCITY_SERVER_URL}" \ 
+          -e AGENT_NAME="${TEAMCITY_AGENT_NAME}" \
+          -e AGENT_TOKEN=${TEAMCITY_AGENT_TOKEN} \
+          -e TEAMCITY_DOCKER_NETWORK=host \
+          -e TZ="${TEAMCITY_TZ}" \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v /opt/buildagent/work:/opt/buildagent/work \
+          -v /opt/buildagent/temp:/opt/buildagent/temp \
+          -v /opt/buildagent/tools:/opt/buildagent/tools \
+          -v /opt/buildagent/plugins:/opt/buildagent/plugins \
+          -v /opt/buildagent/system:/opt/buildagent/system \
+          "${TEAMCITY_IMAGE}"
+                
+        # Restart on failure (like compose's unless-stopped)
+        Restart=on-failure
+        RestartSec=10
+        #
+        # Ensure logs go through journald
+        StandardOutput=journal
+        StandardError=journal
         
         [Install]
         WantedBy=multi-user.target
 
-    # Teamcity Build Agent Service
-    - name: tcagent.service
-      enabled: true
-      contents: |
-        [Unit]
-        After=docker.service docker-compose-install.service
-        Requires=docker.service docker-compose-install.service
-        
-        [Service]
-        ExecStart=/opt/bin/docker-compose -f /etc/docker-compose.yaml up
-        
-        [Install]
-        WantedBy=multi-user.target

@@ -1,5 +1,28 @@
 terraform {
-  required_version = "> 1.6.0"
+  required_version = ">= 1.12.0"
+}
+
+locals {
+  vms = [
+    {
+      id          = 145,
+      name        = "1.khaki.lucidsolutions.co.nz",
+      description = "First Teamcity Build Agent running Flatcar and docker"
+      butane_variables = {}
+    },
+    {
+      id          = 146,
+      name        = "2.khaki.lucidsolutions.co.nz",
+      description = "Second Teamcity Build Agent running Flatcar and docker"
+      butane_variables = {}
+    },
+    {
+      id          = 147,
+      name        = "3.khaki.lucidsolutions.co.nz",
+      description = "Third Teamcity Build Agent running Flatcar and docker"
+      butane_variables = {}
+    }
+  ]
 }
 /*
     Jetbrains Teamcity Build Agent (deployed as a container on Flatcar Linux).
@@ -13,57 +36,91 @@ terraform {
       - https://hub.docker.com/r/jetbrains/teamcity-agent/
 */
 module "khaki" {
-  # source        = "c:\\dev\\lucid\\terraform-vm-proxmox"
-  source        = "lucidsolns/proxmox/vm"
-  version       = ">= 0.0.13"
-  vm_count      = 3
-  vm_id         = 145
-  name          = "khaki.lucidsolutions.co.nz"
-  description   = <<-EOT
-      Jetbrains Teamcity Build Agent running as a container on Flatcar Linux
-  EOT
-  startup       = "order=150"
-  tags          = ["flatcar", "jetbrains", "teamcity", "build-agent", "development"]
-  pm_api_url    = var.pm_api_url
-  target_node   = var.target_node
-  pm_user       = var.pm_user
-  pm_password   = var.pm_password
-  template_name = "flatcar-production-qemu-stable-3602.2.3"
-  butane_conf   = "${path.module}/jetbrains-teamcity-build-agent.bu.tftpl"
-  butane_path   = "${path.module}/config"
-  memory        = 8192
-  networks      = [{ bridge = var.bridge, tag = 120 }]
-  disks         = [
-    // The flatcar EFI/boot/root/... template disk. This is a placeholder to
-    // stop the proxmox provider from getting too confused.
-    {
-      slot    = 0
-      type    = "scsi"
-      size    = "16G" # resize the template disk
-      storage = "local"
-      format  = "qcow2"
-    },
+  # source = "../terraform-proxmox-flatcar-vm"
+  source  = "lucidsolns/flatcar-vm/proxmox"
+  version = "1.0.9"
 
+  vms = [
+    for idx, vm in local.vms : merge(
+      vm,
+      {
+        butane_variables = merge(vm.butane_variables, var.teamcity_admin_token != null  ? {
+          "TEAMCITY_AGENT_NAME" =  module.agent[idx].name
+          "TEAMCITY_AGENT_TOKEN" = module.agent[idx].token
+        }: {
+          "TEAMCITY_AGENT_NAME" =  format("Flatcar Linux %d", idx)
+          "TEAMCITY_AGENT_TOKEN" = ""
+        })
+      }
+    )
+  ]
+  node_name = var.target_node
+  tags = ["flatcar", "jetbrains", "teamcity", "build-agent", "development"]
+
+  butane_conf         = "${path.module}/jetbrains-teamcity-build-agent.bu.tftpl"
+  butane_snippet_path = "${path.module}/config"
+  butane_variables = {
+    "TEAMCITY_SERVER_URL" = var.teamcity_server_url
+    "TEAMCITY_IMAGE"      = "jetbrains/teamcity-agent:2025.07.1"
+    "TEAMCITY_TZ"         = "Pacific/Auckland"
+  }
+
+  cpu = {
+    cores = 4
+    // Broadwell Xeon-D
+    // see: https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm#type-11
+    type  = "x86-64-v3"
+  }
+  memory = {
+    dedicated = 8000
+  }
+
+  storage_images       = var.storage_images
+  storage_root         = var.storage_root
+  storage_path_mapping = var.storage_path_mapping
+
+  flatcar_version = "4230.2.1"
+
+  bridge  = var.bridge
+  vlan_id = var.network_tag
+
+  disks = [
     // A non-persistent sparse disk for swap, this is /dev/vda in the VM
     {
-      slot    = 1
-      type    = "virtio"
-      storage = "vmdata" # hack, this must be 'present'
-      size    = "4G" # hack, this must be present
-      format  = "raw"
+      datastore_id = var.storage_data
+      size         = "4"
+      iothread     = true
       discard = "on" # enable 'trim' support, as ZFS supports this
+      backup       = false
     },
 
     // A non-persistent data disk to be mounted on /opt/
-    //
     {
-      slot    = 2
-      type    = "virtio"
-      storage = "vmdata" # hack, this must be 'present'
-      size    = "32G" # hack, disable trying to size the volume
-      format  = "raw" # default
+      datastore_id = var.storage_data
+      size = "32" # hack, disable trying to size the volume
+      iothread     = true
       discard = "on" # enable 'trim' support, as ZFS supports this
+      backup       = false
     }
   ]
+}
+
+
+/**
+    Create a new agent auth token. The JetBrains Terraform provider doesn't appear to
+    support this resource, so provision it via a http request.
+
+    see:
+      - https://www.jetbrains.com/help/teamcity/rest/manage-agents.html
+      - https://registry.terraform.io/providers/JetBrains/teamcity/latest
+      - https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http
+ */
+module "agent" {
+  source   = "./modules/build-agent"
+  for_each = var.teamcity_admin_token != null ? {for index, vm in local.vms : index => vm} : {}
+
+  server_url  = var.teamcity_server_url
+  admin_token = var.teamcity_admin_token
+  name = format("Flatcar Linux %d", each.key + 1)
 }
 

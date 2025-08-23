@@ -31,12 +31,55 @@ variable "pm_password" {
   default     = ""
 }
 
+variable "ssh_username" {
+  description = "The SSH username used when performing commands that require SSH access to Proxmox"
+  default     = "root"
+  type        = string
+}
+
 variable "bridge" {
   default = "vmbr0"
   type=string
 }
 
 variable "network_tag" {
-  default = 0
+  default = 120
   type = number
 }
+
+variable "storage_images" { default = "vmroot" }
+variable "storage_root" { default = "vmroot" }
+variable "storage_data" { default = "vmdata" }
+variable storage_path_mapping {
+  description = "Mapping of storage name to a local path"
+  type = map(string)
+  default = {
+    "vmroot" = "/droplet/vmroot"
+  }
+}
+
+variable teamcity_server_url {
+  description = "The base URL for the Teamcity server"
+  type = string
+  default = "https://teamcity.lucidsolutions.co.nz"
+}
+
+variable teamcity_admin_token {
+  description =<<EOF
+    An optional token to allow auto-provisioning a of build agent. If this isn't provided
+    then the teamcity agents will need to be manually authenticated.
+
+    This token should be obtained from the teamcity server by
+      1. Log in to TeamCity as an administrator. Go to My Settings & Tools → Access Tokens.
+      2. Profile Icon (bottom left of sidebar) → Access Tokens.
+      3. Click Generate Token. Give it a descriptive name (e.g. automation-admin).
+      4. Choose an expiration of permanent (no value), and assign scope of
+      5. Copy the generated token once (TeamCity won’t show it again). Put the token
+         along with the Proxmox credentials into `credentials.auto.tfvars` or similar
+         into this directory.
+
+EOF
+  type = string
+  default = null
+}
+
