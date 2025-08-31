@@ -99,6 +99,12 @@ storage:
         name: tcuser
       group:
         name: tcuser
+    - path: /opt/buildagent/logs
+      mode: 0750
+      user:
+        name: tcuser
+      group:
+        name: tcuser
 
   files:
     - path: /etc/hostname
@@ -169,8 +175,8 @@ systemd:
         #
         # === Pull and clean up ===
         ExecStartPre=-/usr/bin/docker pull "${TEAMCITY_IMAGE}"
-        ExecStartPre=-/usr/bin/docker stop %p
-        ExecStartPre=-/usr/bin/docker rm -f %p
+        ExecStartPre=-/usr/bin/docker stop teamcity-agent
+        ExecStartPre=-/usr/bin/docker rm -f teamcity-agent
         
         # === Run container ===
         #
@@ -203,9 +209,9 @@ systemd:
           --name=teamcity-agent \
           --network host \
           --group-add 233 \
-          -e SERVER_URL="${TEAMCITY_SERVER_URL}" \ 
+          -e SERVER_URL="${TEAMCITY_SERVER_URL}" \
           -e AGENT_NAME="${TEAMCITY_AGENT_NAME}" \
-          -e AGENT_TOKEN=${TEAMCITY_AGENT_TOKEN} \
+          -e AGENT_TOKEN="${TEAMCITY_AGENT_TOKEN}" \
           -e TEAMCITY_DOCKER_NETWORK=host \
           -e TZ="${TEAMCITY_TZ}" \
           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -214,6 +220,7 @@ systemd:
           -v /opt/buildagent/tools:/opt/buildagent/tools \
           -v /opt/buildagent/plugins:/opt/buildagent/plugins \
           -v /opt/buildagent/system:/opt/buildagent/system \
+          -v /opt/buildagent/logs:/opt/buildagent/logs \
           "${TEAMCITY_IMAGE}"
                 
         # Restart on failure (like compose's unless-stopped)
@@ -221,8 +228,8 @@ systemd:
         RestartSec=10
         #
         # Ensure logs go through journald
-        StandardOutput=journal
-        StandardError=journal
+        # StandardOutput=journal
+        # StandardError=journal
         
         [Install]
         WantedBy=multi-user.target

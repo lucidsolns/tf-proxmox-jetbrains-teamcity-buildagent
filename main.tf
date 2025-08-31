@@ -44,14 +44,19 @@ module "khaki" {
     for idx, vm in local.vms : merge(
       vm,
       {
+      butane_variables = {
+        "TEAMCITY_AGENT_NAME" = format("Flatcar Linux %d", (idx + 1))
+        "TEAMCITY_AGENT_TOKEN" = ""
+      }}
+      /*
         butane_variables = merge(vm.butane_variables, var.teamcity_admin_token != null  ? {
           "TEAMCITY_AGENT_NAME" =  module.agent[idx].name
           "TEAMCITY_AGENT_TOKEN" = module.agent[idx].token
         }: {
-          "TEAMCITY_AGENT_NAME" =  format("Flatcar Linux %d", idx)
+          "TEAMCITY_AGENT_NAME" =  format("Flatcar Linux %d", (idx + 1))
           "TEAMCITY_AGENT_TOKEN" = ""
-        })
-      }
+        }
+        */
     )
   ]
   node_name = var.target_node
@@ -115,6 +120,7 @@ module "khaki" {
       - https://registry.terraform.io/providers/JetBrains/teamcity/latest
       - https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http
  */
+/*
 module "agent" {
   source   = "./modules/build-agent"
   for_each = var.teamcity_admin_token != null ? {for index, vm in local.vms : index => vm} : {}
@@ -124,3 +130,4 @@ module "agent" {
   name = format("Flatcar Linux %d", each.key + 1)
 }
 
+*/

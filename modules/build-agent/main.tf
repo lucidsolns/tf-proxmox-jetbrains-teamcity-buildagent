@@ -1,7 +1,138 @@
 # WARNING: this sub-module is still unimplemented, not to prototype stage
+/*
+    This is at best a CRUD design.  The aim is to create a build agent resource.
+
+    The aim is not to enumerate all build agents (although this would
+    be easier), as it is provided at `/app/rest/agents`.
+
+    Mapping to CRUD (as against REST):
+
+      CREATE - POST XML to /app/agents/v1/register, comes back with:
+         - agentId
+         - token
+         - newName
+      UPDATE - is this needed
+      DELETE - fully supported (`/app/rest/agents/{agentLocator}`)
+      READ - easily supported (GET `/app/rest/agents/{agentLocator}`)
+
+    Locators:
+
+      Although the agent supports many locator patterns, for this module, it is likely
+      that only the 'name' and 'id' locators are required.
+
+      - https://www.jetbrains.com/help/teamcity/rest/agentlocator.html#Properties
+
+    Attributes
+
+       - id: the build agent identifier, seems to be an auto-incrementing 64 bit integer
+       - name: the name of the agent
+
+    Models:
+
+        - the agent model has everything needed for this module,
+
+        https://www.jetbrains.com/help/teamcity/rest/agent.html
+
+    TODO:
+      - determine how to add the agent to a named pool
+      - determine how to auth the agent
+      - determine how to get the auth token
 
 
-// https://registry.terraform.io/providers/Mastercard/restapi/latest
+
+      <Response>
+          <data class="AgentRegistrationDetails">
+              <agentId>82</agentId>
+              <token>3f5a9a88de5b7a07070ee11ebb76601c</token>
+              <newName>Flatcar Linux 12</newName>
+          </data>
+      </Response>
+
+    To get an agent:
+
+        ```
+        curl -X GET "https://teamcity.lucidsolutions.co.nz:443/app/rest/agents/id:82" \
+            -H "Accept: application/json;q=1.0, application/xml;q=0.5" \
+            -H "Authorization: Bearer <token>"
+        ```
+
+        The response is JSON. However the enabled and authorised information is duplicated:
+
+        ```
+          {
+            "id": 82,
+            "name": "Flatcar Linux 12",
+            "typeId": 89,
+            "connected": false,
+            "enabled": true,
+            "authorized": false,
+            "uptodate": true,
+            "ip": "fd0c:898b:471c:7::2",
+            "host": "violet.lucidsolutions.co.nz",
+            "port": 9090,
+            "href": "/app/rest/agents/id:82",
+            "webUrl": "https://teamcity.lucidsolutions.co.nz/agentDetails.html?id=82&agentTypeId=89&realAgentName=Flatcar%20Linux%2012",
+            "enabledInfo": {
+              "status": true,
+              "comment": {
+                "timestamp": "20250820T205451+1200"
+              }
+            },
+            "authorizedInfo": {
+              "status": false,
+              "comment": {
+                "timestamp": "20250820T205451+1200"
+              }
+            },
+            "pool": {
+              "id": -3,
+              "name": "<unknown>",
+              "href": "/app/rest/agentPools/id:-3"
+            }
+          }
+
+        ```
+
+    Workflow
+
+      GET agent by name
+      if !agent exists {
+         POST register
+         authorize
+         POST /app/rest/agentPools/{agentPoolLocator}/agents to add to pool
+         return token from register
+      } else {
+        if !authorized {
+          authorise
+        }
+        POST /app/rest/agentPools/{agentPoolLocator}/agents to add to pool
+        return no token
+      }
+
+
+    see:
+      - https://www.jetbrains.com/help/teamcity/rest/agentapi.html#getAgent
+      - https://www.jetbrains.com/help/teamcity/rest/teamcity-rest-api-documentation.html
+      - https://registry.terraform.io/providers/Mastercard/restapi/latest
+      - https://javadoc.jetbrains.net/teamcity/openapi/current/jetbrains/buildServer/agentServer/AgentRegistrationDetails.html
+
+*/
+/*
+resource "restapi_object" "agent" {
+  # path used for read/update/delete
+  path         = "app/rest/agents/name:${var.name}"
+  id_attribute = "id"
+
+  # data for the create call
+  data = jsonencode({
+    model  = "Corolla"
+    color  = "Blue"
+  })
+
+  # override the create path
+  create_path = "${var.server_url}/app/agents/v1/register"
+}
+*/
 /*
    Use the Teamcity RESTAPI to determine if there is an agent with a
    matching name. Upon success a 200 code should be returned with JSON
