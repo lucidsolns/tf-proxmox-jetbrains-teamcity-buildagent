@@ -38,7 +38,7 @@ locals {
 module "khaki" {
   # source = "../terraform-proxmox-flatcar-vm"
   source  = "lucidsolns/flatcar-vm/proxmox"
-  version = "1.0.9"
+  version = "1.0.10"
 
   vms = [
     for idx, vm in local.vms : merge(
