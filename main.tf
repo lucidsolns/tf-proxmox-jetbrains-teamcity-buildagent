@@ -38,7 +38,7 @@ locals {
 module "khaki" {
   # source = "../terraform-proxmox-flatcar-vm"
   source  = "lucidsolns/flatcar-vm/proxmox"
-  version = "1.0.10"
+  version = "1.0.13"
 
   vms = [
     for idx, vm in local.vms : merge(
@@ -66,7 +66,7 @@ module "khaki" {
   butane_snippet_path = "${path.module}/config"
   butane_variables = {
     "TEAMCITY_SERVER_URL" = var.teamcity_server_url
-    "TEAMCITY_IMAGE"      = "jetbrains/teamcity-agent:2025.07.1"
+    "TEAMCITY_IMAGE"      = "jetbrains/teamcity-agent:2025.11"
     "TEAMCITY_TZ"         = "Pacific/Auckland"
   }
 
@@ -83,8 +83,6 @@ module "khaki" {
   storage_images       = var.storage_images
   storage_root         = var.storage_root
   storage_path_mapping = var.storage_path_mapping
-
-  flatcar_version = "4230.2.1"
 
   bridge  = var.bridge
   vlan_id = var.network_tag

@@ -14,10 +14,12 @@ passwd:
       ssh_authorized_keys:
         - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkyaM9D4TtCOSdIR8JvH5DCt0UHbfPGx7VlSJrP593N greg-ed25519
 
-    # The build agent runs as uid/gid 1000:1000, so create a user make that readable
+    # The build agent runs as uid/gid 1001:1001, so create a user make that readable
     # for file ownerships. The build agent must have access to the docker socket.
+    #
+    # Note: Historically the build agent ran with uid/gid 1000:1000
     - name: tcuser
-      uid: 1000
+      uid: 1001
       primary_group: tcuser
       groups:
         - docker
@@ -25,7 +27,7 @@ passwd:
 
   groups:
     - name: tcuser
-      gid: 1000
+      gid: 1001
 
 storage:
   disks:
@@ -125,7 +127,16 @@ storage:
           Address=10.20.20.${4 + vm_index}/24
           Gateway=10.20.20.1
           IPv6AcceptRA=yes
+  
+          DNS=fd0c:898b:471c:2::5
+          DNS=10.20.2.5
+          DNS=10.20.0.1
+          DNS=fd0c:898b:471c:c::2
           
+          NTP=0.ntp.lucidsolutions.co.nz
+          NTP=1.ntp.lucidsolutions.co.nz
+          NTP=2.ntp.lucidsolutions.co.nz
+  
           [IPv6AcceptRA]
           Token=static:::${4 + vm_index}
 
@@ -172,6 +183,9 @@ systemd:
         Requires=docker.service
         
         [Service]
+        KillMode=process
+        TimeoutStopSec=20
+        
         #
         # === Pull and clean up ===
         ExecStartPre=-/usr/bin/docker pull "${TEAMCITY_IMAGE}"
@@ -201,8 +215,6 @@ systemd:
         #  - https://serverfault.com/questions/690685/automatically-authorize-teamcity-agents
         #  - https://plugins.jetbrains.com/plugin/8998-agent-token-authorize
         #  - https://plugins.jetbrains.com/plugin/13105-agent-auto-add-remove
-        #
-        # see:
         #  - https://docs.docker.com/compose/compose-file/compose-file-v2/#group_add
         #
         ExecStart=/usr/bin/docker run --rm \
@@ -222,6 +234,7 @@ systemd:
           -v /opt/buildagent/system:/opt/buildagent/system \
           -v /opt/buildagent/logs:/opt/buildagent/logs \
           "${TEAMCITY_IMAGE}"
+        ExecStop=-/usr/bin/docker rm -f teamcity-agent
                 
         # Restart on failure (like compose's unless-stopped)
         Restart=on-failure
