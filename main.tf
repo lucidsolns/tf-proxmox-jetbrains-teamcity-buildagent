@@ -65,9 +65,9 @@ module "khaki" {
   butane_conf         = "${path.module}/jetbrains-teamcity-build-agent.bu.tftpl"
   butane_snippet_path = "${path.module}/config"
   butane_variables = {
-    "TEAMCITY_SERVER_URL" = var.teamcity_server_url
-    "TEAMCITY_IMAGE"      = "jetbrains/teamcity-agent:2025.11"
-    "TEAMCITY_TZ"         = "Pacific/Auckland"
+    "TEAMCITY_SERVER_URL"  = var.teamcity_server_url
+    "TEAMCITY_AGENT_IMAGE" = var.teamcity_agent_image
+    "TEAMCITY_TZ"          = "Pacific/Auckland"
   }
 
   cpu = {

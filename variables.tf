@@ -58,6 +58,23 @@ variable storage_path_mapping {
   }
 }
 
+
+variable teamcity_agent_image {
+  description =<<EOF
+     The name (and optional version of the teamcity build agent container)
+
+     The container is likely to be jetbrains/teamcity-agent, but the tag can
+     have 'linux' and 'linux-sudo' suffixes. The sudo part of the tag allows
+     the buildagent to sudo to perform operations like docker inside docker
+     (which is not be done here).
+
+     see:
+       - https://hub.docker.com/r/jetbrains/teamcity-agent
+  EOF
+  type =string
+  default = "jetbrains/teamcity-agent:2025.11"
+}
+
 variable teamcity_server_url {
   description = "The base URL for the Teamcity server"
   type = string

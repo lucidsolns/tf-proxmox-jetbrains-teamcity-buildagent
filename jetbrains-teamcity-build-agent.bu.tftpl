@@ -18,15 +18,15 @@ passwd:
     # for file ownerships. The build agent must have access to the docker socket.
     #
     # Note: Historically the build agent ran with uid/gid 1000:1000
-    - name: tcuser
+    - name: buildagent
       uid: 1001
-      primary_group: tcuser
+      primary_group: buildagent
       groups:
         - docker
       no_create_home: true
 
   groups:
-    - name: tcuser
+    - name: buildagent
       gid: 1001
 
 storage:
@@ -68,45 +68,58 @@ storage:
     - path: /opt/buildagent
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
+    - path: /opt/buildagent/conf
+      mode: 0750
+      user:
+        name: buildagent
+      group:
+        name: buildagent
+
     - path: /opt/buildagent/system
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
     - path: /opt/buildagent/work
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
     - path: /opt/buildagent/temp
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
     - path: /opt/buildagent/tools
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
     - path: /opt/buildagent/plugins
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
+
     - path: /opt/buildagent/logs
       mode: 0750
       user:
-        name: tcuser
+        name: buildagent
       group:
-        name: tcuser
+        name: buildagent
 
   files:
     - path: /etc/hostname
@@ -188,7 +201,7 @@ systemd:
         
         #
         # === Pull and clean up ===
-        ExecStartPre=-/usr/bin/docker pull "${TEAMCITY_IMAGE}"
+        ExecStartPre=-/usr/bin/docker pull "${TEAMCITY_AGENT_IMAGE}"
         ExecStartPre=-/usr/bin/docker stop teamcity-agent
         ExecStartPre=-/usr/bin/docker rm -f teamcity-agent
         
@@ -201,7 +214,7 @@ systemd:
         # so they require non-host networking.
         #
         # The Flatcar VM uses GID=233 for docker, whereas the Agent container uses GID=999
-        # for the docker group. Add the Flatcar VM group id to the agent user (UID=1000)
+        # for the docker group. Add the Flatcar VM group id to the agent user (UID=1001)
         #
         # Use 'docker-out-of-docker' to run docker workloads within the Teamcity build
         # agent - i.e. use the host Flatcar docker
@@ -211,11 +224,13 @@ systemd:
         # a build agent token.
         #
         # see:
+        #  - https://hub.docker.com/r/jetbrains/teamcity-agent
         #  - https://github.com/matt-richardson/TeamCityAgentAutoRegisterPlugin
         #  - https://serverfault.com/questions/690685/automatically-authorize-teamcity-agents
         #  - https://plugins.jetbrains.com/plugin/8998-agent-token-authorize
         #  - https://plugins.jetbrains.com/plugin/13105-agent-auto-add-remove
         #  - https://docs.docker.com/compose/compose-file/compose-file-v2/#group_add
+        #  - https://www.jetbrains.com/help/teamcity/agent-docker-images.html
         #
         ExecStart=/usr/bin/docker run --rm \
           --name=teamcity-agent \
@@ -227,13 +242,14 @@ systemd:
           -e TEAMCITY_DOCKER_NETWORK=host \
           -e TZ="${TEAMCITY_TZ}" \
           -v /var/run/docker.sock:/var/run/docker.sock \
+          -v /opt/buildagent/conf:/data/teamcity_agent/conf \
           -v /opt/buildagent/work:/opt/buildagent/work \
           -v /opt/buildagent/temp:/opt/buildagent/temp \
           -v /opt/buildagent/tools:/opt/buildagent/tools \
           -v /opt/buildagent/plugins:/opt/buildagent/plugins \
           -v /opt/buildagent/system:/opt/buildagent/system \
           -v /opt/buildagent/logs:/opt/buildagent/logs \
-          "${TEAMCITY_IMAGE}"
+          "${TEAMCITY_AGENT_IMAGE}"
         ExecStop=-/usr/bin/docker rm -f teamcity-agent
                 
         # Restart on failure (like compose's unless-stopped)
